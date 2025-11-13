@@ -23,7 +23,7 @@ class APIFeatures {
             const sortBy = this.queryString.sort.split(',').join(' ')
             this.query = this.query.sort(sortBy)
         } else {
-            this.query = this.query.sort('_id')
+            this.query = this.query.sort('-createdAt')
         }
 
         return this;
@@ -48,27 +48,10 @@ class APIFeatures {
 
         this.query = this.query.skip(skip).limit(limit)
 
-        // if(this.queryString.page) {
-        //     const numTours = await Tour.countDocuments()
-        //     if(skip >= numTours) throw new Error('This page does not exist')
-        // }
+       
         return this
     }
 
-    // search() {
-    //     if (this.queryString.search) {
-    //         const searchRegex = { $regex: this.queryString.search, $options: 'i' }
-    //         this.query = this.query.find({
-    //             $or: [
-    //                 { name: searchRegex },
-    //                 { summary: searchRegex },
-    //                 { description: searchRegex },
-    //                 { difficulty: searchRegex }
-    //             ]
-    //         })
-    //     }
-    //     return this
-    // }
 }
 
 module.exports = APIFeatures

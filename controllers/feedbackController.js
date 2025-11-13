@@ -1,140 +1,15 @@
 const fs = require('fs')
 const Feedback = require('./../models/feedbackModel')
 const APIFeatures = require('./../utils/apiFeatures')
+const { analyzeFeedbackSentiment } = require('./../services/sentimentAnalysisService')
 
 
 
-// exports.aliasTopTours = (req, res, next) => {
-//     req.query.limit = '5',
-//         req.query.sort = '-ratingsAverage, price'
-//     req.query.fields = 'name,price,ratingsAverage,summary,difficulty'
-//     next()
-// }
 
-// exports.getTourStats = catchAsync(async (req,res,next) => {
-//         const stats = await Tour.aggregate([
-//             {$match: { ratingsAverage : { $gte: 4.5}}},
-//             { $group : {
-//                 _id: {$toUpper: '$difficulty'},
-//                 numRatings: {$sum: '$ratingsQuantity'},
-//                 avgRating: {$avg: '$ratingsAverage'},
-//                 avgPrice: {$avg: '$price'},
-//                 minPrice: {$min: '$price'},
-//                 maxPrice: {$max: '$price'},
-//                 numTours: {$sum: 1}
-//             }},
-//             {$sort: {avgPrice: 1}},
-//             // cd {$match: {_id: { $ne: 'EASY'}}}
-//         ])
-//         res.status(200).json({
-//             status: 'success',
-//             data: {
-//                 stats
-//             }
-//         }) 
-// })
-
-// exports.getMonthlyPlan = catchAsync(async (req, res, next) => {
-    
-//         const year  = req.params.year * 1
-//         const plan = await Tour.aggregate([
-
-//             {
-//                 $unwind: '$startDates'
-//             },
-//             {
-//                 $match: { startDates: { $gte: new Date(`${year}-01-01`), $lte: new Date(`${year}-12-31`) } }
-//             },
-//             {
-//                 $group: {
-//                     _id: { $month: '$startDates' },
-//                     numTourStarts: { $sum: 1 },
-//                     tours: { $push: '$name' }
-//                 }
-//             },
-//             { $addFields: { month: '$_id' } },
-//             {
-//                 $project: {
-//                     _id: 0
-//                 }
-//             },
-//             {
-//                 $sort: { numTourStarts: -1 }
-//             },
-//             {
-//                 $limit: 12
-//             }
-           
-//         ])
-
-//         res.status(200).json({
-//             status: 'success',
-//             data: {
-//                 plan
-//             }
-//         })
-
-    
-// })
 
 exports.getAllFeedback = async (req, res, next) => {
     try {
-        // BUILD QUERY
-        // 1A) Filtering
-        // const queryObj = {...req.query}
-        // const excludedFields = ['page', 'sort', 'limit', 'fields', 'search']
-        // excludedFields.forEach(el => delete queryObj[el])
-        // console.log(req.query)
-
-        // // 1B) Advanced Filtering
-        // let queryStr = JSON.stringify(queryObj)
-        // queryStr = queryStr.replace(/\b(gte|gt|lte|lt)\b/g, match => `$${match}`)
-
-        // let query = Tour.find(JSON.parse(queryStr))
-
-        // 2) Sorting
-        // if(req.query.sort) {
-        //     const sortBy = req.query.sort.split(',').join(' ')
-        //     query = query.sort(sortBy)
-        // }else {
-        //     query = query.sort('_id')
-        // }
-
-        // 3) Field Limiting
-
-        // if(req.query.fields) {
-        //     const fields = req.query.fields.split(',').join(' ')
-        //     query = query.select(fields)
-        // } else {
-        //     query = query.select('-__v')
-        // }
-
-        // 4) Pagination
-        // const page = req.query.page * 1 || 1
-        // const limit = req.query.limit * 1 || 100
-        // const skip = (page - 1) * limit
-
-        // query = query.skip(skip).limit(limit)
-
-        // if(req.query.page) {
-        //     const numTours = await Tour.countDocuments()
-        //     if(skip >= numTours) throw new Error('This page does not exist')
-        // }
-
-        // 5) Searching - Search across multiple fields
-        // if(req.query.search) {
-        //     const searchRegex = { $regex: req.query.search, $options: 'i' };
-        //     query = query.find({
-        //         $or: [
-        //             { name: searchRegex },
-        //             { summary: searchRegex },
-        //             { description: searchRegex },
-        //             { difficulty: searchRegex }
-        //         ]
-        //     });
-        // }
-
-
+       
         // EXECUTE QUERY
         const features = new APIFeatures(Feedback.find(), req.query).filter().sort().limitFields().paginate()
         const feedbacks = await features.query
@@ -180,21 +55,118 @@ exports.getFeedback = async (req, res, next) => {
     }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// CREATE FEEDBACK WITH AI SENTIMENT ANALYSIS
+// ═══════════════════════════════════════════════════════════════════════════
 exports.createFeedback = async (req, res, next) => {
-try{    
-        const newFeedback = await Feedback.create(req.body)
+    try {
+        console.log('\n' + '═'.repeat(70));
+        console.log('📝 NEW FEEDBACK SUBMISSION');
+        console.log('═'.repeat(70));
+
+        const feedbackData = req.body;
+        
+        // Step 1: Create initial feedback document (without AI analysis)
+        console.log('Step 1: Creating initial feedback document...');
+        const feedback = new Feedback({
+            ...feedbackData,
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent'],
+            status: 'pending',
+        });
+
+        // Step 2: Run AI sentiment analysis
+        console.log('Step 2: Running AI sentiment analysis...');
+        console.log(`   Comment: "${feedback.comment.substring(0, 60)}..."`);
+        console.log(`   Rating: ${feedback.rating}/5`);
+        
+        try {
+            const aiAnalysis = await analyzeFeedbackSentiment(
+                feedback.comment,
+                feedback.rating,
+                feedback.serviceType
+            );
+
+            // Step 3: Attach AI insights to feedback
+            console.log('Step 3: Attaching AI insights to feedback...');
+            feedback.sentiment = aiAnalysis.sentiment;
+            feedback.sentimentScore = aiAnalysis.sentimentScore;
+            feedback.categories = aiAnalysis.categories;
+            feedback.emotions = aiAnalysis.emotions || [];
+            feedback.urgency = aiAnalysis.urgency;
+            feedback.actionableInsights = aiAnalysis.actionableInsights;
+            feedback.aiAnalysisTimestamp = new Date();
+            feedback.aiModel = process.env.AI_MODEL || 'gpt-4o';
+            feedback.aiConfidenceScore = aiAnalysis.confidenceScore;
+
+            console.log('✅ AI Analysis Results:');
+            console.log(`   ├─ Sentiment: ${aiAnalysis.sentiment} (${aiAnalysis.sentimentScore}/100)`);
+            console.log(`   ├─ Categories: ${aiAnalysis.categories.join(', ')}`);
+            console.log(`   ├─ Emotions: ${aiAnalysis.emotions.join(', ')}`);
+            console.log(`   ├─ Urgency: ${aiAnalysis.urgency}`);
+            console.log(`   └─ Confidence: ${aiAnalysis.confidenceScore}%`);
+
+        } catch (aiError) {
+            console.error('⚠️  AI Analysis failed, saving feedback without AI insights:', aiError.message);
+            // Feedback will be saved without AI analysis if it fails
+        }
+
+        // Step 4: Save to database
+        console.log('Step 4: Saving feedback to database...');
+        await feedback.save();
+
+        // Step 5: Check if urgent action needed
+        if (feedback.isUrgent || feedback.needsImmediateAction) {
+            console.log('🚨 ALERT: High-priority feedback detected!');
+            console.log(`   Reference: ${feedback.referenceNumber}`);
+            console.log(`   Urgency: ${feedback.urgency}`);
+        }
+
+        console.log('✅ Feedback saved successfully!');
+        console.log(`   Reference Number: ${feedback.referenceNumber}`);
+        console.log('═'.repeat(70) + '\n');
+
+        // Step 6: Return response
         res.status(201).json({
             status: 'success',
+            message: 'Feedback submitted successfully',
             data: {
-                feedback: newFeedback
+                feedback: {
+                    id: feedback._id,
+                    referenceNumber: feedback.referenceNumber,
+                    customerName: feedback.customerName,
+                    rating: feedback.rating,
+                    serviceType: feedback.serviceType,
+                    comment: feedback.comment,
+                    
+                    // AI Analysis Results
+                    sentiment: feedback.sentiment,
+                    sentimentScore: feedback.sentimentScore,
+                    categories: feedback.categories,
+                    emotions: feedback.emotions,
+                    urgency: feedback.urgency,
+                    actionableInsights: feedback.actionableInsights,
+                    
+                    // Virtual properties
+                    isNegative: feedback.isNegative,
+                    isUrgent: feedback.isUrgent,
+                    needsImmediateAction: feedback.needsImmediateAction,
+                    sentimentCategory: feedback.sentimentCategory,
+                    
+                    // Metadata
+                    createdAt: feedback.createdAt,
+                    status: feedback.status,
+                }
             }
-        }) 
-} catch (err) {
-    res.status(404).json({
-        status: "fail",
-        message: err.message
-    })
-}
+        });
+        
+    } catch (err) {
+        console.error('❌ Error creating feedback:', err.message);
+        res.status(400).json({
+            status: 'fail',
+            message: err.message
+        });
+    }
 }
 
 exports.updateFeedback = async (req, res, next) => {
@@ -205,7 +177,7 @@ try{
         })
 
          if(!feedback) {
-            return next(new AppError('No feedback found with that ID', 404))
+            throw new Error('No feedback found with that ID', 404)
         }
 
         res.status(200).json({
